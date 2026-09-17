@@ -207,6 +207,23 @@
   .muscletag { background:var(--tag-bg, var(--accent-dim)); color:var(--tag-fg, var(--accent)); }
   .setrow .r:focus { border-color:var(--accent); }
 
+
+  .exercisePicker { position:relative; flex:1; min-width:0; }
+  .exercisePicker .exNameInput { width:100%; }
+  .exerciseDropdown {
+    display:none; position:absolute; left:0; right:0; top:calc(100% - 7px);
+    z-index:30; max-height:190px; overflow-y:auto;
+    background:var(--surface); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 8px 22px rgba(0,0,0,.25);
+  }
+  .exerciseDropdown.open { display:block; }
+  .exerciseOption {
+    padding:9px 11px; font-size:13.5px; cursor:pointer; border-bottom:1px solid var(--border);
+  }
+  .exerciseOption:last-child { border-bottom:none; }
+  .exerciseOption:hover, .exerciseOption.active { background:var(--surface-2); color:var(--accent); }
+  .exerciseEmpty { padding:9px 11px; font-size:12px; color:var(--text-dim); }
+
 </style>
 </head>
 <body>
@@ -397,7 +414,10 @@ function addExerciseBlock(name) {
   block.id = id;
   block.innerHTML = `
     <div class="exhead">
-      <input list="exerciseNames" placeholder="Название упражнения" class="exNameInput" value="${name ? escapeHtmlAttr(name) : ''}">
+      <div class="exercisePicker">
+        <input autocomplete="off" placeholder="Название упражнения" class="exNameInput" value="${name ? escapeHtmlAttr(name) : ''}">
+        <div class="exerciseDropdown"></div>
+      </div>
       <button class="iconbtn" onclick="document.getElementById('${id}').remove()" title="Удалить упражнение">✕</button>
     </div>
     <div class="exrow2">
@@ -415,6 +435,7 @@ function addExerciseBlock(name) {
 
   const nameInput = block.querySelector('.exNameInput');
   const muscleSelect = block.querySelector('.muscleSelect');
+  setupExerciseDropdown(block);
   nameInput.addEventListener('input', () => updateLastHint(nameInput));
   nameInput.addEventListener('change', () => updateLastHint(nameInput));
   muscleSelect.addEventListener('change', () => { block.dataset.muscleTouched = '1'; });
@@ -429,6 +450,45 @@ function addExerciseBlock(name) {
 
 function escapeHtmlAttr(value) {
   return String(value).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setupExerciseDropdown(block) {
+  const input = block.querySelector('.exNameInput');
+  const dropdown = block.querySelector('.exerciseDropdown');
+
+  function renderDropdown() {
+    const query = input.value.trim().toLowerCase();
+    const names = [...new Set(sessions.flatMap(s => s.exercises.map(e => e.name.trim())).filter(Boolean))]
+      .filter(n => !query || n.toLowerCase().includes(query));
+
+    if (!names.length) {
+      dropdown.innerHTML = '<div class="exerciseEmpty">Нет сохранённых упражнений</div>';
+    } else {
+      dropdown.innerHTML = names.map(n =>
+        `<div class="exerciseOption" data-name="${escapeHtmlAttr(n)}">${escapeHtml(n)}</div>`
+      ).join('');
+
+      dropdown.querySelectorAll('.exerciseOption').forEach(option => {
+        option.addEventListener('mousedown', event => {
+          event.preventDefault();
+          input.value = option.dataset.name;
+          dropdown.classList.remove('open');
+          updateLastHint(input);
+        });
+      });
+    }
+    dropdown.classList.add('open');
+  }
+
+  input.addEventListener('focus', renderDropdown);
+  input.addEventListener('input', renderDropdown);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Escape') dropdown.classList.remove('open');
+  });
+
+  document.addEventListener('click', event => {
+    if (!block.contains(event.target)) dropdown.classList.remove('open');
+  });
 }
 
 function toggleExtra(btn) {
