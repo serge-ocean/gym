@@ -179,6 +179,11 @@
       <div id="tplChips" class="tplChips"></div>
       <div id="tplManage" style="display:none; margin-top:10px">
         <button class="btn btn-ghost btn-sm" onclick="saveCurrentAsTemplate()">💾 Сохранить текущий список как шаблон</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="exportBackup()">⬇️ Скачать бэкап (JSON)</button>
+        <label class="btn btn-ghost btn-sm" style="display:block; text-align:center; cursor:pointer; margin-top:8px">
+          ⬆️ Загрузить из файла
+          <input type="file" accept="application/json" style="display:none" onchange="importBackup(event)">
+        </label>
       </div>
     </div>
     <div class="card">
@@ -638,6 +643,58 @@ function renderAllProgress() {
     html += items.map(progCardHtml).join('');
   });
   container.innerHTML = html;
+}
+
+function exportBackup() {
+  const data = { sessions, templates, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gym-tracker-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data.sessions)) throw new Error('bad format');
+      const replace = confirm('ОК — заменить текущие данные загруженными.\nОтмена — объединить с тем, что уже есть (без дублей).');
+      if (replace) {
+        sessions = data.sessions || [];
+        templates = data.templates || [];
+      } else {
+        const existingKeys = new Set(sessions.map(s => JSON.stringify(s)));
+        (data.sessions || []).forEach(s => {
+          const k = JSON.stringify(s);
+          if (!existingKeys.has(k)) { sessions.push(s); existingKeys.add(k); }
+        });
+        sessions.sort((a, b) => a.date.localeCompare(b.date));
+        const existingNames = new Set(templates.map(t => t.name.toLowerCase()));
+        (data.templates || []).forEach(t => {
+          if (!existingNames.has(t.name.toLowerCase())) { templates.push(t); existingNames.add(t.name.toLowerCase()); }
+        });
+      }
+      saveSessions();
+      saveTemplates();
+      updateExerciseNames();
+      renderHistory();
+      renderAllProgress();
+      renderTemplateChips();
+      alert('Импортировано тренировок: ' + ((data.sessions && data.sessions.length) || 0));
+    } catch (e) {
+      alert('Не удалось прочитать файл — проверь, что это тот самый JSON-бэкап.');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 function switchView(name) {
