@@ -159,6 +159,54 @@
   .delta .num { font-family: var(--font-mono); font-size: 22px; font-weight: 700; }
   .delta .lbl { font-size: 12.5px; color: var(--text-dim); }
   .up { color: var(--good); } .down { color: var(--bad); } .flat { color: var(--text-dim); }
+
+  /* compact controls / history editing */
+  .sessActions { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:10px; }
+  .sessActions .btn { flex:0 0 auto; width:auto; }
+  .sessActions .btn-save { margin-top:0; }
+  .sessActions .btn-add-ex { margin-left:auto; }
+  .extraToggle {
+    display:inline-flex; align-items:center; gap:5px; border:0; background:none;
+    color:var(--text-dim); font:500 12px var(--font-ui); padding:3px 0; cursor:pointer;
+  }
+  .extraPanel { display:none; margin-top:7px; }
+  .extraPanel.open { display:block; }
+  .commentInput { width:100%; }
+  .lastcomment {
+    font-size:10.5px; color:var(--text-dim); opacity:.62; margin:2px 0 7px;
+    line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .lastcomment b { font-weight:500; opacity:.8; }
+  .flagCompact { display:flex; gap:6px; margin-bottom:10px; }
+  .flagCompact .flagBtn {
+    flex:0 0 auto; font-size:11px; padding:5px 8px; opacity:.72;
+  }
+  .flagCompact .flagBtn.on { opacity:1; }
+  .historyEdit {
+    color:var(--accent); background:none; border:0; font:500 12px var(--font-ui);
+    cursor:pointer; padding:4px 0; margin-top:6px; margin-right:12px;
+  }
+  .historyActions { display:flex; align-items:center; }
+  .muscleTag { display:inline-block; }
+  .muscle-nogi { --tag-bg:#eadfca; --tag-fg:#745f3d; }
+  .muscle-spina { --tag-bg:#dce8df; --tag-fg:#466452; }
+  .muscle-grud { --tag-bg:#eadde0; --tag-fg:#79545e; }
+  .muscle-plechi { --tag-bg:#dedfea; --tag-fg:#5d5f78; }
+  .muscle-biceps { --tag-bg:#e7dce9; --tag-fg:#705477; }
+  .muscle-triceps { --tag-bg:#d9e5ec; --tag-fg:#4e6878; }
+  .muscle-predplechya { --tag-bg:#e3e1d6; --tag-fg:#66634e; }
+  .muscle-press { --tag-bg:#e8e0d2; --tag-fg:#766348; }
+  .muscle-drugoe { --tag-bg:#e1e1e1; --tag-fg:#666; }
+  @media (prefers-color-scheme: dark) {
+    .muscletag { background: color-mix(in srgb, var(--tag-bg) 18%, var(--surface)); color: color-mix(in srgb, var(--tag-fg) 70%, var(--text)); }
+  }
+  :root[data-theme="dark"] .muscletag {
+    background: color-mix(in srgb, var(--tag-bg) 18%, var(--surface));
+    color: color-mix(in srgb, var(--tag-fg) 70%, var(--text));
+  }
+  .muscletag { background:var(--tag-bg, var(--accent-dim)); color:var(--tag-fg, var(--accent)); }
+  .setrow .r:focus { border-color:var(--accent); }
+
 </style>
 </head>
 <body>
@@ -189,13 +237,15 @@
     <div class="card">
       <label>Дата</label>
       <input type="date" id="sessDate">
-      <div class="sessFlags">
-        <button type="button" id="flagFood" class="flagBtn" onclick="this.classList.toggle('on')">🍽️ Плохо поел</button>
-        <button type="button" id="flagSleep" class="flagBtn" onclick="this.classList.toggle('on')">😴 Плохо спал</button>
+      <div class="flagCompact">
+        <button type="button" id="flagFood" class="flagBtn" onclick="this.classList.toggle('on')" title="Отметить питание">🍽️</button>
+        <button type="button" id="flagSleep" class="flagBtn" onclick="this.classList.toggle('on')" title="Отметить сон">😴</button>
       </div>
       <div id="exContainer"></div>
-      <button class="btn btn-ghost" onclick="addExerciseBlock()" style="margin-top:4px">+ упражнение</button>
-      <button class="btn btn-save" onclick="saveSession()">Сохранить тренировку</button>
+      <div class="sessActions">
+        <button class="btn btn-save btn-sm" onclick="saveSession()">Сохранить тренировку</button>
+        <button class="btn btn-ghost btn-sm btn-add-ex" onclick="addExerciseBlock()">+ упражнение</button>
+      </div>
     </div>
   </div>
 
@@ -220,7 +270,7 @@
 <script>
 const STORE_KEY = 'gymTrackerSessions';
 const TPL_KEY = 'gymTrackerTemplates';
-const MUSCLES = ['Ноги','Спина','Грудь','Плечи','Руки','Предплечья','Пресс','Другое'];
+const MUSCLES = ['Ноги','Спина','Грудь','Плечи','Бицепс','Трицепс','Предплечья','Пресс','Другое'];
 let sessions = [];
 let templates = [];
 let activeTemplateId = null;
@@ -230,6 +280,11 @@ function loadSessions() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     sessions = raw ? JSON.parse(raw) : [];
+    // Backward compatibility: old "Руки" entries become "Бицепс".
+    sessions.forEach(s => s.exercises.forEach(e => {
+      if (e.muscle === 'Руки') e.muscle = 'Бицепс';
+      if (e.muscle === 'Предплечья') e.muscle = 'Предплечья';
+    }));
   } catch (e) { sessions = []; }
 }
 function saveSessions() {
@@ -342,32 +397,116 @@ function addExerciseBlock(name) {
   block.id = id;
   block.innerHTML = `
     <div class="exhead">
-      <input list="exerciseNames" placeholder="Название упражнения" class="exNameInput" value="${name ? name.replace(/"/g,'') : ''}">
-      <button class="iconbtn" onclick="document.getElementById('${id}').remove()">✕</button>
+      <input list="exerciseNames" placeholder="Название упражнения" class="exNameInput" value="${name ? escapeHtmlAttr(name) : ''}">
+      <button class="iconbtn" onclick="document.getElementById('${id}').remove()" title="Удалить упражнение">✕</button>
     </div>
     <div class="exrow2">
       <select class="muscleSelect">${muscleOptions('')}</select>
     </div>
     <div class="lasthint" style="display:none"></div>
+    <div class="lastcomment" style="display:none"></div>
     <div class="setsContainer"></div>
-    <button class="btn btn-ghost btn-sm" onclick="addSetRow('${id}')">+ подход</button>
-    <input type="text" class="commentInput" placeholder="Комментарий (необязательно)">
+    <button class="extraToggle" type="button" onclick="toggleExtra(this)">▸ Дополнительно</button>
+    <div class="extraPanel">
+      <input type="text" class="commentInput" placeholder="Комментарий (необязательно)">
+    </div>
   `;
   container.appendChild(block);
+
   const nameInput = block.querySelector('.exNameInput');
   const muscleSelect = block.querySelector('.muscleSelect');
   nameInput.addEventListener('input', () => updateLastHint(nameInput));
   nameInput.addEventListener('change', () => updateLastHint(nameInput));
   muscleSelect.addEventListener('change', () => { block.dataset.muscleTouched = '1'; });
+
+  // Three set rows by default.
   addSetRow(id);
+  addSetRow(id);
+  addSetRow(id);
+
   if (name) updateLastHint(nameInput);
+}
+
+function escapeHtmlAttr(value) {
+  return String(value).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleExtra(btn) {
+  const panel = btn.nextElementSibling;
+  const open = panel.classList.toggle('open');
+  btn.textContent = open ? '▾ Дополнительно' : '▸ Дополнительно';
+}
+
+function toggleHistoryEdit(idx) {
+  const s = sessions[idx];
+  if (!s) return;
+  document.getElementById('sessDate').value = s.date;
+  document.getElementById('flagFood').classList.toggle('on', !!s.ateBad);
+  document.getElementById('flagSleep').classList.toggle('on', !!s.sleptBad);
+  document.getElementById('exContainer').innerHTML = '';
+  s.exercises.forEach(e => {
+    addExerciseBlock(e.name);
+    const block = document.querySelector('#exContainer .exblock:last-child');
+    block.querySelector('.muscleSelect').value = e.muscle || '';
+    block.dataset.muscleTouched = '1';
+
+    const sets = block.querySelector('.setsContainer');
+    sets.innerHTML = '';
+    (e.sets || []).forEach(st => addSetRow(block.id, st));
+    if (!e.sets || !e.sets.length) addSetRow(block.id);
+
+    if (e.comment) {
+      const panel = block.querySelector('.extraPanel');
+      panel.classList.add('open');
+      block.querySelector('.extraToggle').textContent = '▾ Дополнительно';
+      block.querySelector('.commentInput').value = e.comment;
+    }
+    updateLastHint(block.querySelector('.exNameInput'));
+  });
+  sessions.splice(idx, 1);
+  saveSessions();
+  updateExerciseNames();
+  renderHistory();
+  renderAllProgress();
+  activeTemplateId = null;
+  switchView('add');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function addSetRow(blockId, preset = null) {
+  const setsContainer = document.querySelector('#' + blockId + ' .setsContainer');
+  if (!setsContainer) return;
+  const row = document.createElement('div');
+  row.className = 'setrow';
+  row.innerHTML = `
+    <input class="w" type="number" inputmode="decimal" placeholder="вес" value="${preset && preset.w != null ? preset.w : ''}">
+    <span class="x">×</span>
+    <input class="r" type="number" inputmode="numeric" placeholder="повт." value="${preset && preset.r != null ? preset.r : ''}">
+    <button type="button" class="setFail${preset && preset.failure ? ' on' : ''}" onclick="this.classList.toggle('on')" title="Отказ на этом подходе">🚩</button>
+    <button class="iconbtn" onclick="this.parentElement.remove(); applyPlaceholders(document.getElementById('${blockId}'))" title="Удалить подход">✕</button>
+  `;
+  setsContainer.appendChild(row);
+
+  const reps = row.querySelector('.r');
+  reps.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const rows = [...setsContainer.querySelectorAll('.setrow')];
+    const currentIndex = rows.indexOf(row);
+    if (currentIndex === rows.length - 1) addSetRow(blockId);
+    const nextRows = [...setsContainer.querySelectorAll('.setrow')];
+    const next = nextRows[currentIndex + 1];
+    if (next) next.querySelector('.w').focus();
+  });
+
+  applyPlaceholders(document.getElementById(blockId));
 }
 
 function getLastExercise(exName) {
   const target = exName.trim().toLowerCase();
   for (let i = sessions.length - 1; i >= 0; i--) {
     const ex = sessions[i].exercises.find(e => e.name.trim().toLowerCase() === target);
-    if (ex) return ex;
+    if (ex) return { ...ex, date: sessions[i].date };
   }
   return null;
 }
@@ -389,7 +528,7 @@ function updateLastHint(nameInput) {
   block.dataset.lastSets = last ? JSON.stringify(last.sets) : '';
   const hint = block.querySelector('.lasthint');
   if (last && last.sets && last.sets.length) {
-    hint.innerHTML = 'Прошлый раз: ' + last.sets.map(s => `<b>${s.w}</b>×${s.r}${s.failure ? '<span class="setflag">🚩</span>' : ''}`).join('  ');
+    hint.innerHTML = `Прошлый раз <b>${fmtDate(last.date || '')}:</b> ` + last.sets.map(s => `<b>${s.w}</b>×${s.r}${s.failure ? '<span class="setflag">🚩</span>' : ''}`).join('  ');
     hint.style.display = '';
   } else {
     hint.style.display = 'none';
@@ -403,7 +542,15 @@ function updateLastHint(nameInput) {
   }
 
   const commentInput = block.querySelector('.commentInput');
-  commentInput.placeholder = last && last.comment ? `Прошлый раз: ${last.comment}` : 'Комментарий (необязательно)';
+  const lastComment = block.querySelector('.lastcomment');
+  if (last && last.comment) {
+    lastComment.innerHTML = `Комментарий <b>${fmtDate(last.date || '')}:</b> ${escapeHtml(last.comment)}`;
+    lastComment.style.display = '';
+    commentInput.placeholder = 'Комментарий (необязательно)';
+  } else {
+    lastComment.style.display = 'none';
+    commentInput.placeholder = 'Комментарий (необязательно)';
+  }
 }
 
 function applyPlaceholders(block) {
@@ -420,21 +567,6 @@ function applyPlaceholders(block) {
       r.placeholder = 'повт.';
     }
   });
-}
-
-function addSetRow(blockId) {
-  const setsContainer = document.querySelector('#' + blockId + ' .setsContainer');
-  const row = document.createElement('div');
-  row.className = 'setrow';
-  row.innerHTML = `
-    <input class="w" type="number" inputmode="decimal" placeholder="вес">
-    <span class="x">×</span>
-    <input class="r" type="number" inputmode="numeric" placeholder="повт.">
-    <button type="button" class="setFail" onclick="this.classList.toggle('on')" title="Отказ на этом подходе">🚩</button>
-    <button class="iconbtn" onclick="this.parentElement.remove()">✕</button>
-  `;
-  setsContainer.appendChild(row);
-  applyPlaceholders(document.getElementById(blockId));
 }
 
 function saveSession() {
@@ -499,6 +631,19 @@ function updateExerciseNames() {
   dl.innerHTML = [...names].map(n => `<option value="${n.replace(/"/g,'')}">`).join('');
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function muscleClass(muscle) {
+  const map = {
+    'Ноги':'muscle-nogi','Спина':'muscle-spina','Грудь':'muscle-grud','Плечи':'muscle-plechi',
+    'Бицепс':'muscle-biceps','Трицепс':'muscle-triceps','Предплечья':'muscle-predplechya',
+    'Пресс':'muscle-press','Другое':'muscle-drugoe'
+  };
+  return map[muscle] || '';
+}
+
 function fmtDate(iso) {
   const [y,m,d] = iso.split('-');
   return `${d}.${m}.${y}`;
@@ -511,6 +656,7 @@ function renderHistory() {
     list.innerHTML = '<div class="empty">Пока нет ни одной тренировки.<br>Добавь первую во вкладке «Добавить».</div>';
     return;
   }
+
   const ordered = [...sessions].reverse();
   list.innerHTML = ordered.map((s, i) => {
     const realIdx = sessions.length - 1 - i;
@@ -519,10 +665,11 @@ function renderHistory() {
     const bodyId = 'body' + realIdx;
     const flags = (s.ateBad ? '🍽️' : '') + (s.sleptBad ? '😴' : '');
     const exLines = s.exercises.map(e => {
-      const muscleTag = e.muscle ? `<span class="muscletag">${e.muscle}</span>` : '';
-      const commentLine = e.comment ? `<div class="excomment">${e.comment}</div>` : '';
-      const setsStr = e.sets.map(st => st.w + '×' + st.r + (st.failure ? '<span class="setflag">🚩</span>' : '')).join('  ');
-      return `<div class="exline"><div class="exname">${muscleTag}${e.name}</div><div class="exsets">${setsStr}</div>${commentLine}</div>`;
+      const muscleTag = e.muscle
+        ? `<span class="muscletag muscleTag ${muscleClass(e.muscle)}">${escapeHtml(e.muscle)}</span>` : '';
+      const commentLine = e.comment ? `<div class="excomment">${escapeHtml(e.comment)}</div>` : '';
+      const setsStr = e.sets.map(st => escapeHtml(st.w) + '×' + escapeHtml(st.r) + (st.failure ? '<span class="setflag">🚩</span>' : '')).join('  ');
+      return `<div class="exline"><div class="exname">${muscleTag}${escapeHtml(e.name)}</div><div class="exsets">${setsStr}</div>${commentLine}</div>`;
     }).join('');
     return `
       <div class="card sesscard">
@@ -532,7 +679,10 @@ function renderHistory() {
         </div>
         <div class="sessbody" id="${bodyId}">
           ${exLines}
-          <button class="del" onclick="deleteSession(${realIdx})">Удалить тренировку</button>
+          <div class="historyActions">
+            <button class="historyEdit" onclick="event.stopPropagation(); toggleHistoryEdit(${realIdx})">Редактировать</button>
+            <button class="del" onclick="event.stopPropagation(); deleteSession(${realIdx})">Удалить тренировку</button>
+          </div>
         </div>
       </div>`;
   }).join('');
